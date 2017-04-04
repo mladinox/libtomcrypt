@@ -21,7 +21,7 @@ static const struct {
       LTC_TEST_FN(pkcs_1_eme_test),
       LTC_TEST_FN(rsa_test),
       LTC_TEST_FN(dh_test),
-      LTC_TEST_FN(ecc_tests),
+      LTC_TEST_FN(ecc_test),
       LTC_TEST_FN(dsa_test),
       LTC_TEST_FN(katja_test),
 };

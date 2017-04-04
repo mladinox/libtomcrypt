@@ -60,7 +60,7 @@ int rotate_test(void);
 int rsa_test(void);
 int dh_test(void);
 int katja_test(void);
-int ecc_tests(void);
+int ecc_test(void);
 int dsa_test(void);
 int der_tests(void);
 int misc_test(void);

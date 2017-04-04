@@ -9,10 +9,8 @@
  * Tom St Denis, tomstdenis@gmail.com, http://libtom.org
  */
 
-/* Implements ECC over Z/pZ for curve y^2 = x^3 - 3x + b
+/* Implements ECC over Z/pZ for curve y^2 = x^3 + a*x + b
  *
- * All curves taken from NIST recommendation paper of July 1999
- * Available at http://csrc.nist.gov/cryptval/dss.htm
  */
 #include "tomcrypt.h"
 
@@ -38,6 +36,13 @@ int ltc_ecc_map(ecc_point *P, void *modulus, void *mp)
    LTC_ARGCHK(P       != NULL);
    LTC_ARGCHK(modulus != NULL);
    LTC_ARGCHK(mp      != NULL);
+
+   if (mp_iszero(P->z)) {
+      if ((err = mp_set(P->x, 0)) != CRYPT_OK) { return err; }
+      if ((err = mp_set(P->y, 0)) != CRYPT_OK) { return err; }
+      if ((err = mp_set(P->z, 1)) != CRYPT_OK) { return err; }
+      return CRYPT_OK;
+   }
 
    if ((err = mp_init_multi(&t1, &t2, NULL)) != CRYPT_OK) {
       return CRYPT_MEM;
