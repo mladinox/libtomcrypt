@@ -489,6 +489,10 @@ typedef struct ltc_asn1_list_ {
    unsigned long size;
    /** The used flag, this is used by the CHOICE ASN.1 type to indicate which choice was made */
    int           used;
+   /** Flag used to indicate optional items in ASN.1 sequences */
+   int           optional;
+   /** Flag used to indicate context specific tags on ASN.1 sequence items */
+   unsigned char tag;
    /** prev/next entry in the list */
    struct ltc_asn1_list_ *prev, *next, *child, *parent;
 } ltc_asn1_list;
@@ -501,6 +505,8 @@ typedef struct ltc_asn1_list_ {
       LTC_MACRO_list[LTC_MACRO_temp].data = (void*)(Data);  \
       LTC_MACRO_list[LTC_MACRO_temp].size = (Size);  \
       LTC_MACRO_list[LTC_MACRO_temp].used = 0;       \
+      LTC_MACRO_list[LTC_MACRO_temp].tag = 0;        \
+      LTC_MACRO_list[LTC_MACRO_temp].optional = 0;   \
    } while (0)
 
 /* SEQUENCE */
@@ -516,6 +522,8 @@ int der_decode_sequence_ex(const unsigned char *in, unsigned long  inlen,
 
 int der_length_sequence(ltc_asn1_list *list, unsigned long inlen,
                         unsigned long *outlen);
+int der_length_sequence_ex(ltc_asn1_list *list, unsigned long inlen,
+                           unsigned long *outlen, unsigned long *payloadlen);
 
 /* SUBJECT PUBLIC KEY INFO */
 int der_encode_subject_public_key_info(unsigned char *out, unsigned long *outlen,
@@ -525,6 +533,11 @@ int der_encode_subject_public_key_info(unsigned char *out, unsigned long *outlen
 int der_decode_subject_public_key_info(const unsigned char *in, unsigned long inlen,
         unsigned int algorithm, void* public_key, unsigned long* public_key_len,
         unsigned long parameters_type, ltc_asn1_list* parameters, unsigned long parameters_len);
+
+int der_decode_subject_public_key_info_ex(const unsigned char *in, unsigned long inlen,
+        unsigned int algorithm, void* public_key, unsigned long* public_key_len,
+        unsigned long parameters_type, void* parameters, unsigned long parameters_len,
+        unsigned long *parameters_outsize);
 
 /* SET */
 #define der_decode_set(in, inlen, list, outlen) der_decode_sequence_ex(in, inlen, list, outlen, 0)
