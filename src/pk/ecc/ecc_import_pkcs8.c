@@ -123,7 +123,7 @@ int ecc_import_pkcs8(const unsigned char *in,  unsigned long inlen,
       /* create bignums */
       if ((err = mp_read_unsigned_bin(a, bin_a, len_a)) != CRYPT_OK)                   { goto LBL_ERR; }
       if ((err = mp_read_unsigned_bin(b, bin_b, len_b)) != CRYPT_OK)                   { goto LBL_ERR; }
-      if ((err = ecc_import_point(bin_g, len_g, prime, a, b, gx, gy)) != CRYPT_OK)     { goto LBL_ERR; }
+      if ((err = ltc_ecc_import_point(bin_g, len_g, prime, a, b, gx, gy)) != CRYPT_OK) { goto LBL_ERR; }
       /* load curve parameters */
       if ((err = ecc_dp_set_bn(dp, a, b, prime, order, gx, gy, cofactor)) != CRYPT_OK) { goto LBL_ERR; }
    }

@@ -309,8 +309,6 @@ int  ecc_import_ex(const unsigned char *in, unsigned long inlen, ecc_key *key, c
 int  ecc_import_pkcs8(const unsigned char *in,  unsigned long inlen, const unsigned char *pwd, unsigned long pwdlen, ecc_key *key, ltc_ecc_set_type *dp);
 int  ecc_export_full(unsigned char *out, unsigned long *outlen, int type, ecc_key *key);
 int  ecc_import_full(const unsigned char *in, unsigned long inlen, ecc_key *key, ltc_ecc_set_type *dp);
-int  ecc_export_point(unsigned char *out, unsigned long *outlen, void *x, void *y, unsigned long size, int compressed);
-int  ecc_import_point(const unsigned char *in, unsigned long inlen, void *prime, void *a, void *b, void *x, void *y);
 int  ecc_export_raw(unsigned char *out, unsigned long *outlen, int type, ecc_key *key);
 int  ecc_import_raw(const unsigned char *in, unsigned long inlen, ecc_key *key, ltc_ecc_set_type *dp);
 
@@ -354,6 +352,8 @@ void       ltc_ecc_del_point(ecc_point *p);
 int        ltc_ecc_is_valid_idx(int n);
 int        ltc_ecc_is_point(const ltc_ecc_set_type *dp, void *x, void *y);
 int        ltc_ecc_is_point_at_infinity(ecc_point *p, void *modulus);
+int        ltc_ecc_import_point(const unsigned char *in, unsigned long inlen, void *prime, void *a, void *b, void *x, void *y);
+int        ltc_ecc_export_point(unsigned char *out, unsigned long *outlen, void *x, void *y, unsigned long size, int compressed);
 
 /* point ops (mp == montgomery digit) */
 #if !defined(LTC_MECC_ACCEL) || defined(LTM_DESC) || defined(GMP_DESC)
