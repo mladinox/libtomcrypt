@@ -25,8 +25,11 @@ int ltc_ecc_is_point_at_infinity(ecc_point *P, void *modulus)
    /* trivial case */
    if (!mp_iszero(P->z))                                         goto done;
 
+   /* point (0,0,0) is not at infinity */
+   if (mp_iszero(P->x) && mp_iszero(P->y))                       goto done;
+
    /* initialize */
-   if ((err = mp_init_multi(&x3, &y2, NULL))     != CRYPT_OK)   goto done;
+   if ((err = mp_init_multi(&x3, &y2, NULL))      != CRYPT_OK)   goto done;
 
    /* compute y^2 */
    if ((err = mp_mulmod(P->y, P->y, modulus, y2)) != CRYPT_OK)   goto cleanup;
@@ -35,6 +38,7 @@ int ltc_ecc_is_point_at_infinity(ecc_point *P, void *modulus)
    if ((err = mp_mulmod(P->x, P->x, modulus, x3)) != CRYPT_OK)   goto cleanup;
    if ((err = mp_mulmod(P->x, x3, modulus, x3))   != CRYPT_OK)   goto cleanup;
 
+   /* test y^2 == x^3 */
    if ((mp_cmp(x3, y2) == LTC_MP_EQ) && !mp_iszero(y2)) retval = 1;
 
 cleanup:
