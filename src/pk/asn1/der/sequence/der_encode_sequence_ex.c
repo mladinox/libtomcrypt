@@ -199,7 +199,6 @@ int der_encode_sequence_ex(ltc_asn1_list *list, unsigned long inlen,
            case LTC_ASN1_CONTEXT_SPECIFIC:
            case LTC_ASN1_EOL:
            case LTC_ASN1_TELETEX_STRING:
-           default:
                err = CRYPT_INVALID_ARG;
                goto LBL_ERR;
        }
