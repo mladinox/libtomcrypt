@@ -2151,6 +2151,14 @@
 					>
 				</File>
 				<File
+					RelativePath="src\pk\ecc\ltc_ecc_export_point.c"
+					>
+				</File>
+				<File
+					RelativePath="src\pk\ecc\ltc_ecc_import_point.c"
+					>
+				</File>
+				<File
 					RelativePath="src\pk\ecc\ltc_ecc_is_point.c"
 					>
 				</File>
