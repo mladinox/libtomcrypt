@@ -24,6 +24,9 @@
 #ifndef XMEMCMP
 #define XMEMCMP  memcmp
 #endif
+#ifndef XMEMMOVE
+#define XMEMMOVE memmove
+#endif
 #ifndef XMEM_NEQ
 #define XMEM_NEQ  mem_neq
 #endif
