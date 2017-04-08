@@ -39,7 +39,7 @@ const struct ltc_prng_descriptor rc4_prng_desc =
 int rc4_prng_start(prng_state *prng)
 {
    LTC_ARGCHK(prng != NULL);
-   prng->rc4.ready = 0;
+   prng->ready = 0;
 
    /* set entropy (key) size to zero */
    prng->rc4.s.x = 0;
@@ -66,7 +66,7 @@ int rc4_prng_add_entropy(const unsigned char *in, unsigned long inlen, prng_stat
    LTC_ARGCHK(in != NULL);
    LTC_ARGCHK(inlen > 0);
 
-   if (prng->rc4.ready) {
+   if (prng->ready) {
       /* rc4_prng_ready() was already called, do "rekey" operation */
       if ((err = rc4_keystream(&prng->rc4.s, buf, 256)) != CRYPT_OK)  return err;
       for(i = 0; i < inlen; i++) buf[i % 256] ^= in[i];
@@ -95,7 +95,7 @@ int rc4_prng_ready(prng_state *prng)
    int err, i;
 
    LTC_ARGCHK(prng != NULL);
-   if (prng->rc4.ready) return CRYPT_OK;
+   if (prng->ready) return CRYPT_OK;
 
    len = MIN(prng->rc4.s.x, 256);
    if (len < 5) return CRYPT_ERROR;
@@ -105,7 +105,7 @@ int rc4_prng_ready(prng_state *prng)
    if ((err = rc4_setup(&prng->rc4.s, buf, len)) != CRYPT_OK) return err;
    /* drop first 3072 bytes - https://en.wikipedia.org/wiki/RC4#Fluhrer.2C_Mantin_and_Shamir_attack */
    for (i = 0; i < 12; i++) rc4_keystream(&prng->rc4.s, buf, 256);
-   prng->rc4.ready = 1;
+   prng->ready = 1;
    return CRYPT_OK;
 }
 
@@ -119,7 +119,7 @@ int rc4_prng_ready(prng_state *prng)
 unsigned long rc4_prng_read(unsigned char *out, unsigned long outlen, prng_state *prng)
 {
    LTC_ARGCHK(prng != NULL);
-   if (!prng->rc4.ready) return 0;
+   if (!prng->ready) return 0;
    if (rc4_keystream(&prng->rc4.s, out, outlen) != CRYPT_OK) return 0;
    return outlen;
 }
@@ -135,7 +135,7 @@ int rc4_prng_done(prng_state *prng)
 
    LTC_ARGCHK(prng != NULL);
    if ((err = rc4_done(&prng->rc4.s)) != CRYPT_OK) return err;
-   prng->rc4.ready = 0;
+   prng->ready = 0;
    return CRYPT_OK;
 }
 
@@ -154,7 +154,7 @@ int rc4_prng_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
    LTC_ARGCHK(out    != NULL);
    LTC_ARGCHK(prng   != NULL);
 
-   if (!prng->rc4.ready) return CRYPT_ERROR;
+   if (!prng->ready) return CRYPT_ERROR;
 
    if (*outlen < len) {
       *outlen = len;
@@ -180,7 +180,7 @@ int rc4_prng_import(const unsigned char *in, unsigned long inlen, prng_state *pr
    if (inlen != sizeof(rc4_state)) return CRYPT_INVALID_ARG;
 
    XMEMCPY(&prng->rc4.s, in, inlen);
-   prng->rc4.ready = 1;
+   prng->ready = 1;
    return CRYPT_OK;
 }
 

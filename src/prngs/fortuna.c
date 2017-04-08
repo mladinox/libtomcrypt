@@ -133,6 +133,7 @@ int fortuna_start(prng_state *prng)
    unsigned char tmp[MAXBLOCKSIZE];
 
    LTC_ARGCHK(prng != NULL);
+   prng->ready = 0;
 
    /* initialize the pools */
    for (x = 0; x < LTC_FORTUNA_POOLS; x++) {
@@ -213,7 +214,11 @@ int fortuna_add_entropy(const unsigned char *in, unsigned long inlen, prng_state
 */
 int fortuna_ready(prng_state *prng)
 {
-   return fortuna_reseed(prng);
+   int err;
+   LTC_ARGCHK(prng != NULL);
+   if ((err = fortuna_reseed(prng)) != CRYPT_OK) return err;
+   prng->ready = 1;
+   return CRYPT_OK;
 }
 
 /**
@@ -230,6 +235,7 @@ unsigned long fortuna_read(unsigned char *out, unsigned long outlen, prng_state 
 
    LTC_ARGCHK(out  != NULL);
    LTC_ARGCHK(prng != NULL);
+   if (!prng->ready) return 0;
 
    LTC_MUTEX_LOCK(&prng->fortuna.prng_lock);
 
@@ -325,6 +331,8 @@ int fortuna_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
    LTC_ARGCHK(outlen != NULL);
    LTC_ARGCHK(prng   != NULL);
 
+   if (!prng->ready) return CRYPT_ERROR;
+
    LTC_MUTEX_LOCK(&prng->fortuna.prng_lock);
 
    /* we'll write bytes for s&g's */
@@ -401,7 +409,8 @@ int fortuna_import(const unsigned char *in, unsigned long inlen, prng_state *prn
          return err;
       }
    }
-   return err;
+   prng->ready = 1;
+   return CRYPT_OK;
 }
 
 /**

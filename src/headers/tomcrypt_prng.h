@@ -11,7 +11,6 @@ struct yarrow_prng {
 #ifdef LTC_RC4
 struct rc4_prng {
     rc4_state s;
-    short ready;
 };
 #endif
 
@@ -20,7 +19,6 @@ struct chacha20_prng {
     chacha_state s;        /* chacha state */
     unsigned char ent[40]; /* entropy buffer */
     unsigned long idx;     /* entropy counter */
-    short ready;           /* ready flag 0-1 */
 };
 #endif
 
@@ -47,27 +45,29 @@ struct sober128_prng {
     sober128_state s;      /* sober128 state */
     unsigned char ent[40]; /* entropy buffer */
     unsigned long idx;     /* entropy counter */
-    short ready;           /* ready flag 0-1 */
 };
 #endif
 
-typedef union Prng_state {
-    char dummy[1];
+typedef struct {
+   short ready;            /* ready flag 0-1 */
+   union {
+      char dummy[1];
 #ifdef LTC_YARROW
-    struct yarrow_prng    yarrow;
+      struct yarrow_prng    yarrow;
 #endif
 #ifdef LTC_RC4
-    struct rc4_prng       rc4;
+      struct rc4_prng       rc4;
 #endif
 #ifdef LTC_CHACHA20_PRNG
-    struct chacha20_prng  chacha;
+      struct chacha20_prng  chacha;
 #endif
 #ifdef LTC_FORTUNA
-    struct fortuna_prng   fortuna;
+      struct fortuna_prng   fortuna;
 #endif
 #ifdef LTC_SOBER128
-    struct sober128_prng  sober128;
+      struct sober128_prng  sober128;
 #endif
+   };
 } prng_state;
 
 /** PRNG descriptor */

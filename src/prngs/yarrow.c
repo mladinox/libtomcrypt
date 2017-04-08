@@ -40,6 +40,7 @@ int yarrow_start(prng_state *prng)
    int err;
 
    LTC_ARGCHK(prng != NULL);
+   prng->ready = 0;
 
    /* these are the default hash/cipher combo used */
 #ifdef LTC_RIJNDAEL
@@ -215,6 +216,7 @@ int yarrow_ready(prng_state *prng)
       return err;
    }
    LTC_MUTEX_UNLOCK(&prng->yarrow.prng_lock);
+   prng->ready = 1;
    return CRYPT_OK;
 }
 
@@ -229,6 +231,7 @@ unsigned long yarrow_read(unsigned char *out, unsigned long outlen, prng_state *
 {
    LTC_ARGCHK(out  != NULL);
    LTC_ARGCHK(prng != NULL);
+   if (!prng->ready) return 0;
 
    LTC_MUTEX_LOCK(&prng->yarrow.prng_lock);
 
@@ -278,6 +281,8 @@ int yarrow_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
    LTC_ARGCHK(outlen != NULL);
    LTC_ARGCHK(prng   != NULL);
 
+   if (!prng->ready) return CRYPT_ERROR;
+
    LTC_MUTEX_LOCK(&prng->yarrow.prng_lock);
 
    /* we'll write 64 bytes for s&g's */
@@ -321,9 +326,13 @@ int yarrow_import(const unsigned char *in, unsigned long inlen, prng_state *prng
       LTC_MUTEX_UNLOCK(&prng->yarrow.prng_lock);
       return err;
    }
-   err = yarrow_add_entropy(in, 64, prng);
+   if ((err = yarrow_add_entropy(in, 64, prng)) != CRYPT_OK) {
+      LTC_MUTEX_UNLOCK(&prng->yarrow.prng_lock);
+      return err;
+   }
    LTC_MUTEX_UNLOCK(&prng->yarrow.prng_lock);
-   return err;
+   prng->ready = 1;
+   return CRYPT_OK;
 }
 
 /**
