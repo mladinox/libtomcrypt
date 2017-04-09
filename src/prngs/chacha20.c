@@ -40,6 +40,7 @@ int chacha20_prng_start(prng_state *prng)
    prng->ready = 0;
    XMEMSET(&prng->chacha.ent, 0, 40);
    prng->chacha.idx = 0;
+   LTC_MUTEX_INIT(&prng->lock)
    return CRYPT_OK;
 }
 
@@ -60,14 +61,15 @@ int chacha20_prng_add_entropy(const unsigned char *in, unsigned long inlen, prng
    LTC_ARGCHK(in != NULL);
    LTC_ARGCHK(inlen > 0);
 
+   LTC_MUTEX_LOCK(&prng->lock);
    if (prng->ready) {
       /* chacha20_prng_ready() was already called, do "rekey" operation */
-      if ((err = chacha_keystream(&prng->chacha.s, buf, 40)) != CRYPT_OK)      return err;
+      if ((err = chacha_keystream(&prng->chacha.s, buf, 40)) != CRYPT_OK)      goto DONE;
       for(i = 0; i < inlen; i++) buf[i % 40] ^= in[i];
       /* key 32 bytes, 20 rounds */
-      if ((err = chacha_setup(&prng->chacha.s, buf, 32, 20)) != CRYPT_OK)      return err;
+      if ((err = chacha_setup(&prng->chacha.s, buf, 32, 20)) != CRYPT_OK)      goto DONE;
       /* iv 8 bytes */
-      if ((err = chacha_ivctr64(&prng->chacha.s, buf + 32, 8, 0)) != CRYPT_OK) return err;
+      if ((err = chacha_ivctr64(&prng->chacha.s, buf + 32, 8, 0)) != CRYPT_OK) goto DONE;
       /* clear KEY + IV */
       XMEMSET(buf, 0, 40);
    }
@@ -75,8 +77,10 @@ int chacha20_prng_add_entropy(const unsigned char *in, unsigned long inlen, prng
       /* chacha20_prng_ready() was not called yet, add entropy to ent buffer */
       while (inlen--) prng->chacha.ent[prng->chacha.idx++ % 40] ^= *in++;
    }
-
-   return CRYPT_OK;
+   err = CRYPT_OK;
+DONE:
+   LTC_MUTEX_UNLOCK(&prng->lock);
+   return err;
 }
 
 /**
@@ -89,16 +93,19 @@ int chacha20_prng_ready(prng_state *prng)
    int err;
 
    LTC_ARGCHK(prng != NULL);
-   if (prng->ready) return CRYPT_OK;
 
+   LTC_MUTEX_LOCK(&prng->lock);
+   if (prng->ready)                                                    { err = CRYPT_OK; goto DONE; }
    /* key 32 bytes, 20 rounds */
-   if ((err = chacha_setup(&prng->chacha.s, prng->chacha.ent, 32, 20)) != CRYPT_OK)      return err;
+   if ((err = chacha_setup(&prng->chacha.s, prng->chacha.ent, 32, 20)) != CRYPT_OK)      goto DONE;
    /* iv 8 bytes */
-   if ((err = chacha_ivctr64(&prng->chacha.s, prng->chacha.ent + 32, 8, 0)) != CRYPT_OK) return err;
+   if ((err = chacha_ivctr64(&prng->chacha.s, prng->chacha.ent + 32, 8, 0)) != CRYPT_OK) goto DONE;
    XMEMSET(&prng->chacha.ent, 0, 40);
    prng->chacha.idx = 0;
    prng->ready = 1;
-   return CRYPT_OK;
+DONE:
+   LTC_MUTEX_UNLOCK(&prng->lock);
+   return err;
 }
 
 /**
@@ -110,9 +117,10 @@ int chacha20_prng_ready(prng_state *prng)
 */
 unsigned long chacha20_prng_read(unsigned char *out, unsigned long outlen, prng_state *prng)
 {
-   LTC_ARGCHK(prng != NULL);
-   if (!prng->ready) return 0;
-   if (chacha_keystream(&prng->chacha.s, out, outlen) != CRYPT_OK) return 0;
+   if (outlen == 0 || prng == NULL || out == NULL) return 0;
+   LTC_MUTEX_LOCK(&prng->lock);
+   if (chacha_keystream(&prng->chacha.s, out, outlen) != CRYPT_OK) outlen = 0;
+   LTC_MUTEX_UNLOCK(&prng->lock);
    return outlen;
 }
 
@@ -124,11 +132,12 @@ unsigned long chacha20_prng_read(unsigned char *out, unsigned long outlen, prng_
 int chacha20_prng_done(prng_state *prng)
 {
    int err;
-
    LTC_ARGCHK(prng != NULL);
-   if ((err = chacha_done(&prng->chacha.s)) != CRYPT_OK) return err;
+   LTC_MUTEX_LOCK(&prng->lock);
    prng->ready = 0;
-   return CRYPT_OK;
+   err = chacha_done(&prng->chacha.s);
+   LTC_MUTEX_UNLOCK(&prng->lock);
+   return err;
 }
 
 /**
@@ -141,18 +150,25 @@ int chacha20_prng_done(prng_state *prng)
 int chacha20_prng_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
 {
    unsigned long len = sizeof(chacha_state);
+
    LTC_ARGCHK(outlen != NULL);
    LTC_ARGCHK(out    != NULL);
    LTC_ARGCHK(prng   != NULL);
-
-   if (!prng->ready) return CRYPT_ERROR;
 
    if (*outlen < len) {
       *outlen = len;
       return CRYPT_BUFFER_OVERFLOW;
    }
+
+   LTC_MUTEX_LOCK(&prng->lock);
+   if (!prng->ready) {
+      LTC_MUTEX_UNLOCK(&prng->lock);
+      return CRYPT_ERROR;
+   }
    XMEMCPY(out, &prng->chacha.s, len);
    *outlen = len;
+   LTC_MUTEX_UNLOCK(&prng->lock);
+
    return CRYPT_OK;
 }
 
@@ -165,13 +181,14 @@ int chacha20_prng_export(unsigned char *out, unsigned long *outlen, prng_state *
 */
 int chacha20_prng_import(const unsigned char *in, unsigned long inlen, prng_state *prng)
 {
-   unsigned long len = sizeof(chacha_state);
    LTC_ARGCHK(in   != NULL);
    LTC_ARGCHK(prng != NULL);
+   if (inlen != sizeof(chacha_state)) return CRYPT_INVALID_ARG;
 
-   if (inlen != len) return CRYPT_INVALID_ARG;
+   LTC_MUTEX_LOCK(&prng->lock);
    XMEMCPY(&prng->chacha.s, in, inlen);
    prng->ready = 1;
+   LTC_MUTEX_UNLOCK(&prng->lock);
    return CRYPT_OK;
 }
 

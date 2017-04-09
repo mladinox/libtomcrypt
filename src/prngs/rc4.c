@@ -40,12 +40,11 @@ int rc4_prng_start(prng_state *prng)
 {
    LTC_ARGCHK(prng != NULL);
    prng->ready = 0;
-
    /* set entropy (key) size to zero */
    prng->rc4.s.x = 0;
    /* clear entropy (key) buffer */
    XMEMSET(&prng->rc4.s.buf, 0, 256);
-
+   LTC_MUTEX_INIT(&prng->lock)
    return CRYPT_OK;
 }
 
@@ -66,12 +65,13 @@ int rc4_prng_add_entropy(const unsigned char *in, unsigned long inlen, prng_stat
    LTC_ARGCHK(in != NULL);
    LTC_ARGCHK(inlen > 0);
 
+   LTC_MUTEX_LOCK(&prng->lock);
    if (prng->ready) {
       /* rc4_prng_ready() was already called, do "rekey" operation */
-      if ((err = rc4_keystream(&prng->rc4.s, buf, 256)) != CRYPT_OK)  return err;
+      if ((err = rc4_keystream(&prng->rc4.s, buf, 256)) != CRYPT_OK)    goto DONE;
       for(i = 0; i < inlen; i++) buf[i % 256] ^= in[i];
       /* initialize RC4 */
-      if ((err = rc4_setup(&prng->rc4.s, buf, 256)) != CRYPT_OK)      return err;
+      if ((err = rc4_setup(&prng->rc4.s, buf, 256)) != CRYPT_OK)        goto DONE;
       /* drop first 3072 bytes - https://en.wikipedia.org/wiki/RC4#Fluhrer.2C_Mantin_and_Shamir_attack */
       for (i = 0; i < 12; i++) rc4_keystream(&prng->rc4.s, buf, 256);
    }
@@ -79,8 +79,10 @@ int rc4_prng_add_entropy(const unsigned char *in, unsigned long inlen, prng_stat
       /* rc4_prng_ready() was not called yet, add entropy to the buffer */
       while (inlen--) prng->rc4.s.buf[prng->rc4.s.x++ % 256] ^= *in++;
    }
-
-   return CRYPT_OK;
+   err = CRYPT_OK;
+DONE:
+   LTC_MUTEX_UNLOCK(&prng->lock);
+   return err;
 }
 
 /**
@@ -95,18 +97,20 @@ int rc4_prng_ready(prng_state *prng)
    int err, i;
 
    LTC_ARGCHK(prng != NULL);
-   if (prng->ready) return CRYPT_OK;
 
+   LTC_MUTEX_LOCK(&prng->lock);
+   if (prng->ready) { err = CRYPT_OK; goto DONE; }
    len = MIN(prng->rc4.s.x, 256);
-   if (len < 5) return CRYPT_ERROR;
-
+   if (len < 5)  { err = CRYPT_ERROR; goto DONE; }
    XMEMCPY(buf, prng->rc4.s.buf, len);
    /* initialize RC4 */
-   if ((err = rc4_setup(&prng->rc4.s, buf, len)) != CRYPT_OK) return err;
+   if ((err = rc4_setup(&prng->rc4.s, buf, len)) != CRYPT_OK) goto DONE;
    /* drop first 3072 bytes - https://en.wikipedia.org/wiki/RC4#Fluhrer.2C_Mantin_and_Shamir_attack */
    for (i = 0; i < 12; i++) rc4_keystream(&prng->rc4.s, buf, 256);
    prng->ready = 1;
-   return CRYPT_OK;
+DONE:
+   LTC_MUTEX_UNLOCK(&prng->lock);
+   return err;
 }
 
 /**
@@ -118,9 +122,10 @@ int rc4_prng_ready(prng_state *prng)
 */
 unsigned long rc4_prng_read(unsigned char *out, unsigned long outlen, prng_state *prng)
 {
-   LTC_ARGCHK(prng != NULL);
-   if (!prng->ready) return 0;
-   if (rc4_keystream(&prng->rc4.s, out, outlen) != CRYPT_OK) return 0;
+   if (outlen == 0 || prng == NULL || out == NULL) return 0;
+   LTC_MUTEX_LOCK(&prng->lock);
+   if (rc4_keystream(&prng->rc4.s, out, outlen) != CRYPT_OK) outlen = 0;
+   LTC_MUTEX_UNLOCK(&prng->lock);
    return outlen;
 }
 
@@ -132,11 +137,12 @@ unsigned long rc4_prng_read(unsigned char *out, unsigned long outlen, prng_state
 int rc4_prng_done(prng_state *prng)
 {
    int err;
-
    LTC_ARGCHK(prng != NULL);
-   if ((err = rc4_done(&prng->rc4.s)) != CRYPT_OK) return err;
+   LTC_MUTEX_LOCK(&prng->lock);
    prng->ready = 0;
-   return CRYPT_OK;
+   err = rc4_done(&prng->rc4.s);
+   LTC_MUTEX_UNLOCK(&prng->lock);
+   return err;
 }
 
 /**
@@ -154,14 +160,20 @@ int rc4_prng_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
    LTC_ARGCHK(out    != NULL);
    LTC_ARGCHK(prng   != NULL);
 
-   if (!prng->ready) return CRYPT_ERROR;
-
    if (*outlen < len) {
       *outlen = len;
       return CRYPT_BUFFER_OVERFLOW;
    }
+
+   LTC_MUTEX_LOCK(&prng->lock);
+   if (!prng->ready) {
+      LTC_MUTEX_UNLOCK(&prng->lock);
+      return CRYPT_ERROR;
+   }
    XMEMCPY(out, &prng->rc4.s, len);
    *outlen = len;
+   LTC_MUTEX_UNLOCK(&prng->lock);
+
    return CRYPT_OK;
 }
 
@@ -176,11 +188,12 @@ int rc4_prng_import(const unsigned char *in, unsigned long inlen, prng_state *pr
 {
    LTC_ARGCHK(in   != NULL);
    LTC_ARGCHK(prng != NULL);
-
    if (inlen != sizeof(rc4_state)) return CRYPT_INVALID_ARG;
 
+   LTC_MUTEX_LOCK(&prng->lock);
    XMEMCPY(&prng->rc4.s, in, inlen);
    prng->ready = 1;
+   LTC_MUTEX_UNLOCK(&prng->lock);
    return CRYPT_OK;
 }
 

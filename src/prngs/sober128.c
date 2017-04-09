@@ -42,6 +42,7 @@ int sober128_prng_start(prng_state *prng)
    prng->ready = 0;
    XMEMSET(&prng->sober128.ent, 0, 40);
    prng->sober128.idx = 0;
+   LTC_MUTEX_INIT(&prng->lock)
    return CRYPT_OK;
 }
 
@@ -62,14 +63,15 @@ int sober128_prng_add_entropy(const unsigned char *in, unsigned long inlen, prng
    LTC_ARGCHK(in != NULL);
    LTC_ARGCHK(inlen > 0);
 
+   LTC_MUTEX_LOCK(&prng->lock);
    if (prng->ready) {
       /* sober128_prng_ready() was already called, do "rekey" operation */
-      if ((err = sober128_keystream(&prng->sober128.s, buf, 40)) != CRYPT_OK)   return err;
+      if ((err = sober128_keystream(&prng->sober128.s, buf, 40)) != CRYPT_OK)   goto DONE;
       for(i = 0; i < inlen; i++) buf[i % 40] ^= in[i];
       /* key 32 bytes, 20 rounds */
-      if ((err = sober128_setup(&prng->sober128.s, buf, 32)) != CRYPT_OK)       return err;
+      if ((err = sober128_setup(&prng->sober128.s, buf, 32)) != CRYPT_OK)       goto DONE;
       /* iv 8 bytes */
-      if ((err = sober128_setiv(&prng->sober128.s, buf + 32, 8)) != CRYPT_OK)   return err;
+      if ((err = sober128_setiv(&prng->sober128.s, buf + 32, 8)) != CRYPT_OK)   goto DONE;
       /* clear KEY + IV */
       XMEMSET(buf, 0, 40);
    }
@@ -77,8 +79,10 @@ int sober128_prng_add_entropy(const unsigned char *in, unsigned long inlen, prng
       /* sober128_prng_ready() was not called yet, add entropy to ent buffer */
       while (inlen--) prng->sober128.ent[prng->sober128.idx++ % 40] ^= *in++;
    }
-
-   return CRYPT_OK;
+   err = CRYPT_OK;
+DONE:
+   LTC_MUTEX_UNLOCK(&prng->lock);
+   return err;
 }
 
 /**
@@ -91,16 +95,19 @@ int sober128_prng_ready(prng_state *prng)
    int err;
 
    LTC_ARGCHK(prng != NULL);
-   if (prng->ready) return CRYPT_OK;
 
+   LTC_MUTEX_LOCK(&prng->lock);
+   if (prng->ready)                                                     { err = CRYPT_OK; goto DONE; }
    /* key 32 bytes, 20 rounds */
-   if ((err = sober128_setup(&prng->sober128.s, prng->sober128.ent, 32)) != CRYPT_OK)           return err;
+   if ((err = sober128_setup(&prng->sober128.s, prng->sober128.ent, 32)) != CRYPT_OK)     goto DONE;
    /* iv 8 bytes */
-   if ((err = sober128_setiv(&prng->sober128.s, prng->sober128.ent + 32, 8)) != CRYPT_OK)       return err;
+   if ((err = sober128_setiv(&prng->sober128.s, prng->sober128.ent + 32, 8)) != CRYPT_OK) goto DONE;
    XMEMSET(&prng->sober128.ent, 0, 40);
    prng->sober128.idx = 0;
    prng->ready = 1;
-   return CRYPT_OK;
+DONE:
+   LTC_MUTEX_UNLOCK(&prng->lock);
+   return err;
 }
 
 /**
@@ -112,9 +119,10 @@ int sober128_prng_ready(prng_state *prng)
 */
 unsigned long sober128_prng_read(unsigned char *out, unsigned long outlen, prng_state *prng)
 {
-   LTC_ARGCHK(prng != NULL);
-   if (!prng->ready) return 0;
-   if (sober128_keystream(&prng->sober128.s, out, outlen) != CRYPT_OK) return 0;
+   if (outlen == 0 || prng == NULL || out == NULL) return 0;
+   LTC_MUTEX_LOCK(&prng->lock);
+   if (sober128_keystream(&prng->sober128.s, out, outlen) != CRYPT_OK) outlen = 0;
+   LTC_MUTEX_UNLOCK(&prng->lock);
    return outlen;
 }
 
@@ -126,11 +134,12 @@ unsigned long sober128_prng_read(unsigned char *out, unsigned long outlen, prng_
 int sober128_prng_done(prng_state *prng)
 {
    int err;
-
    LTC_ARGCHK(prng != NULL);
-   if ((err = sober128_done(&prng->sober128.s)) != CRYPT_OK) return err;
+   LTC_MUTEX_LOCK(&prng->lock);
    prng->ready = 0;
-   return CRYPT_OK;
+   err = sober128_done(&prng->sober128.s);
+   LTC_MUTEX_UNLOCK(&prng->lock);
+   return err;
 }
 
 /**
@@ -143,18 +152,25 @@ int sober128_prng_done(prng_state *prng)
 int sober128_prng_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
 {
    unsigned long len = sizeof(sober128_state);
+
    LTC_ARGCHK(outlen != NULL);
    LTC_ARGCHK(out    != NULL);
    LTC_ARGCHK(prng   != NULL);
-
-   if (!prng->ready) return CRYPT_ERROR;
 
    if (*outlen < len) {
       *outlen = len;
       return CRYPT_BUFFER_OVERFLOW;
    }
+
+   LTC_MUTEX_LOCK(&prng->lock);
+   if (!prng->ready) {
+      LTC_MUTEX_UNLOCK(&prng->lock);
+      return CRYPT_ERROR;
+   }
    XMEMCPY(out, &prng->sober128.s, len);
    *outlen = len;
+   LTC_MUTEX_UNLOCK(&prng->lock);
+
    return CRYPT_OK;
 }
 
@@ -167,13 +183,14 @@ int sober128_prng_export(unsigned char *out, unsigned long *outlen, prng_state *
 */
 int sober128_prng_import(const unsigned char *in, unsigned long inlen, prng_state *prng)
 {
-   unsigned long len = sizeof(sober128_state);
    LTC_ARGCHK(in   != NULL);
    LTC_ARGCHK(prng != NULL);
+   if (inlen != sizeof(sober128_state)) return CRYPT_INVALID_ARG;
 
-   if (inlen != len) return CRYPT_INVALID_ARG;
+   LTC_MUTEX_LOCK(&prng->lock);
    XMEMCPY(&prng->sober128.s, in, inlen);
    prng->ready = 1;
+   LTC_MUTEX_UNLOCK(&prng->lock);
    return CRYPT_OK;
 }
 

@@ -4,7 +4,6 @@ struct yarrow_prng {
     int                   cipher, hash;
     unsigned char         pool[MAXBLOCKSIZE];
     symmetric_CTR         ctr;
-    LTC_MUTEX_TYPE(prng_lock)
 };
 #endif
 
@@ -36,7 +35,6 @@ struct fortuna_prng {
                   wd;
 
     ulong64       reset_cnt;  /* number of times we have reset */
-    LTC_MUTEX_TYPE(prng_lock)
 };
 #endif
 
@@ -49,7 +47,6 @@ struct sober128_prng {
 #endif
 
 typedef struct {
-   short ready;            /* ready flag 0-1 */
    union {
       char dummy[1];
 #ifdef LTC_YARROW
@@ -68,6 +65,8 @@ typedef struct {
       struct sober128_prng  sober128;
 #endif
    };
+   short ready;            /* ready flag 0-1 */
+   LTC_MUTEX_TYPE(lock);   /* lock */
 } prng_state;
 
 /** PRNG descriptor */
