@@ -20,7 +20,7 @@
 const struct ltc_prng_descriptor rc4_prng_desc =
 {
    "rc4",
-   sizeof(rc4_state),
+   32,
    &rc4_prng_start,
    &rc4_prng_add_entropy,
    &rc4_prng_ready,
@@ -154,26 +154,22 @@ int rc4_prng_done(prng_state *prng)
 */
 int rc4_prng_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
 {
-   unsigned long len = sizeof(rc4_state);
+   unsigned long len = 32;
 
-   LTC_ARGCHK(outlen != NULL);
-   LTC_ARGCHK(out    != NULL);
    LTC_ARGCHK(prng   != NULL);
+   LTC_ARGCHK(out    != NULL);
+   LTC_ARGCHK(outlen != NULL);
 
    if (*outlen < len) {
       *outlen = len;
       return CRYPT_BUFFER_OVERFLOW;
    }
 
-   LTC_MUTEX_LOCK(&prng->lock);
-   if (!prng->ready) {
-      LTC_MUTEX_UNLOCK(&prng->lock);
-      return CRYPT_ERROR;
+   if (rc4_prng_read(out, len, prng) != len) {
+      return CRYPT_ERROR_READPRNG;
    }
-   XMEMCPY(out, &prng->rc4.s, len);
-   *outlen = len;
-   LTC_MUTEX_UNLOCK(&prng->lock);
 
+   *outlen = len;
    return CRYPT_OK;
 }
 
@@ -186,14 +182,14 @@ int rc4_prng_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
 */
 int rc4_prng_import(const unsigned char *in, unsigned long inlen, prng_state *prng)
 {
-   LTC_ARGCHK(in   != NULL);
-   LTC_ARGCHK(prng != NULL);
-   if (inlen != sizeof(rc4_state)) return CRYPT_INVALID_ARG;
+   int err;
 
-   LTC_MUTEX_LOCK(&prng->lock);
-   XMEMCPY(&prng->rc4.s, in, inlen);
-   prng->ready = 1;
-   LTC_MUTEX_UNLOCK(&prng->lock);
+   LTC_ARGCHK(prng != NULL);
+   LTC_ARGCHK(in   != NULL);
+   LTC_ARGCHK(inlen >= 32);
+
+   if ((err = rc4_prng_start(prng)) != CRYPT_OK)                  return err;
+   if ((err = rc4_prng_add_entropy(in, inlen, prng)) != CRYPT_OK) return err;
    return CRYPT_OK;
 }
 
@@ -216,7 +212,8 @@ int rc4_prng_test(void)
    unsigned long dmplen = sizeof(dmp);
    unsigned char out[1000];
    unsigned char t1[] = { 0xE0, 0x4D, 0x9A, 0xF6, 0xA8, 0x9D, 0x77, 0x53, 0xAE, 0x09 };
-   unsigned char t2[] = { 0xEC, 0x66, 0x32, 0xAF, 0xD8, 0xBD, 0x4C, 0x42, 0x1F, 0xCB };
+   unsigned char t2[] = { 0x9D, 0x3C, 0xC6, 0x64, 0x36, 0xB6, 0x76, 0xD5, 0xEB, 0x93 };
+   unsigned char t3[] = { 0x6B, 0x6D, 0xF5, 0xCB, 0x84, 0x37, 0x8F, 0x02, 0xA2, 0x90 };
 
    rc4_prng_start(&st);
    rc4_prng_add_entropy(en, sizeof(en), &st);
@@ -229,12 +226,11 @@ int rc4_prng_test(void)
    rc4_prng_read(out, 10, &st);  /* 10 bytes for testing */
    if (compare_testvector(out, 10, t2, sizeof(t2), "RC4-PRNG", 2)) return CRYPT_FAIL_TESTVECTOR;
    rc4_prng_done(&st);
-
-   XMEMSET(&st, 0xFF, sizeof(st)); /* just to be sure */
    rc4_prng_import(dmp, dmplen, &st);
+   rc4_prng_ready(&st);
    rc4_prng_read(out, 500, &st); /* skip 500 bytes */
    rc4_prng_read(out, 10, &st);  /* 10 bytes for testing */
-   if (compare_testvector(out, 10, t2, sizeof(t2), "RC4-PRNG", 3)) return CRYPT_FAIL_TESTVECTOR;
+   if (compare_testvector(out, 10, t3, sizeof(t3), "RC4-PRNG", 3)) return CRYPT_FAIL_TESTVECTOR;
    rc4_prng_done(&st);
 
    return CRYPT_OK;

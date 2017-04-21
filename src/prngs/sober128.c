@@ -20,7 +20,7 @@
 const struct ltc_prng_descriptor sober128_prng_desc =
 {
    "sober128",
-   sizeof(sober128_state),
+   40,
    &sober128_prng_start,
    &sober128_prng_add_entropy,
    &sober128_prng_ready,
@@ -151,26 +151,22 @@ int sober128_prng_done(prng_state *prng)
 */
 int sober128_prng_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
 {
-   unsigned long len = sizeof(sober128_state);
+   unsigned long len = 40;
 
-   LTC_ARGCHK(outlen != NULL);
-   LTC_ARGCHK(out    != NULL);
    LTC_ARGCHK(prng   != NULL);
+   LTC_ARGCHK(out    != NULL);
+   LTC_ARGCHK(outlen != NULL);
 
    if (*outlen < len) {
       *outlen = len;
       return CRYPT_BUFFER_OVERFLOW;
    }
 
-   LTC_MUTEX_LOCK(&prng->lock);
-   if (!prng->ready) {
-      LTC_MUTEX_UNLOCK(&prng->lock);
-      return CRYPT_ERROR;
+   if (sober128_prng_read(out, len, prng) != len) {
+      return CRYPT_ERROR_READPRNG;
    }
-   XMEMCPY(out, &prng->sober128.s, len);
-   *outlen = len;
-   LTC_MUTEX_UNLOCK(&prng->lock);
 
+   *outlen = len;
    return CRYPT_OK;
 }
 
@@ -183,14 +179,14 @@ int sober128_prng_export(unsigned char *out, unsigned long *outlen, prng_state *
 */
 int sober128_prng_import(const unsigned char *in, unsigned long inlen, prng_state *prng)
 {
-   LTC_ARGCHK(in   != NULL);
-   LTC_ARGCHK(prng != NULL);
-   if (inlen != sizeof(sober128_state)) return CRYPT_INVALID_ARG;
+   int err;
 
-   LTC_MUTEX_LOCK(&prng->lock);
-   XMEMCPY(&prng->sober128.s, in, inlen);
-   prng->ready = 1;
-   LTC_MUTEX_UNLOCK(&prng->lock);
+   LTC_ARGCHK(prng != NULL);
+   LTC_ARGCHK(in   != NULL);
+   LTC_ARGCHK(inlen >= 40);
+
+   if ((err = sober128_prng_start(prng)) != CRYPT_OK)                  return err;
+   if ((err = sober128_prng_add_entropy(in, inlen, prng)) != CRYPT_OK) return err;
    return CRYPT_OK;
 }
 
@@ -213,7 +209,8 @@ int sober128_prng_test(void)
    unsigned long dmplen = sizeof(dmp);
    unsigned char out[500];
    unsigned char t1[] = { 0x31, 0x82, 0xA7, 0xA5, 0x8B, 0xD7, 0xCB, 0x39, 0x86, 0x1A };
-   unsigned char t2[] = { 0x5C, 0xD6, 0x92, 0x4E, 0xE9, 0x2F, 0xD4, 0x82, 0x16, 0xD4 };
+   unsigned char t2[] = { 0x6B, 0x43, 0x9E, 0xBC, 0xE7, 0x62, 0x9B, 0xE6, 0x9B, 0x83 };
+   unsigned char t3[] = { 0x4A, 0x0E, 0x6C, 0xC1, 0xCF, 0xB4, 0x73, 0x49, 0x99, 0x05 };
 
    sober128_prng_start(&st);
    sober128_prng_add_entropy(en, sizeof(en), &st); /* add entropy to uninitialized prng */
@@ -228,12 +225,11 @@ int sober128_prng_test(void)
    sober128_prng_read(out, 10, &st);  /* 10 bytes for testing */
    if (compare_testvector(out, 10, t2, sizeof(t2), "SOBER128-PRNG", 2)) return CRYPT_FAIL_TESTVECTOR;
    sober128_prng_done(&st);
-
-   XMEMSET(&st, 0xFF, sizeof(st)); /* just to be sure */
    sober128_prng_import(dmp, dmplen, &st);
+   sober128_prng_ready(&st);
    sober128_prng_read(out, 500, &st); /* skip 500 bytes */
    sober128_prng_read(out, 10, &st);  /* 10 bytes for testing */
-   if (compare_testvector(out, 10, t2, sizeof(t2), "SOBER128-PRNG", 3)) return CRYPT_FAIL_TESTVECTOR;
+   if (compare_testvector(out, 10, t3, sizeof(t3), "SOBER128-PRNG", 3)) return CRYPT_FAIL_TESTVECTOR;
    sober128_prng_done(&st);
 
    return CRYPT_OK;

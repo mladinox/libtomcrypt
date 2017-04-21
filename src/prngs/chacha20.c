@@ -18,7 +18,7 @@
 const struct ltc_prng_descriptor chacha20_prng_desc =
 {
    "chacha20",
-   sizeof(chacha_state),
+   40,
    &chacha20_prng_start,
    &chacha20_prng_add_entropy,
    &chacha20_prng_ready,
@@ -149,26 +149,22 @@ int chacha20_prng_done(prng_state *prng)
 */
 int chacha20_prng_export(unsigned char *out, unsigned long *outlen, prng_state *prng)
 {
-   unsigned long len = sizeof(chacha_state);
+   unsigned long len = 40;
 
-   LTC_ARGCHK(outlen != NULL);
-   LTC_ARGCHK(out    != NULL);
    LTC_ARGCHK(prng   != NULL);
+   LTC_ARGCHK(out    != NULL);
+   LTC_ARGCHK(outlen != NULL);
 
    if (*outlen < len) {
       *outlen = len;
       return CRYPT_BUFFER_OVERFLOW;
    }
 
-   LTC_MUTEX_LOCK(&prng->lock);
-   if (!prng->ready) {
-      LTC_MUTEX_UNLOCK(&prng->lock);
-      return CRYPT_ERROR;
+   if (chacha20_prng_read(out, len, prng) != len) {
+      return CRYPT_ERROR_READPRNG;
    }
-   XMEMCPY(out, &prng->chacha.s, len);
-   *outlen = len;
-   LTC_MUTEX_UNLOCK(&prng->lock);
 
+   *outlen = len;
    return CRYPT_OK;
 }
 
@@ -181,14 +177,14 @@ int chacha20_prng_export(unsigned char *out, unsigned long *outlen, prng_state *
 */
 int chacha20_prng_import(const unsigned char *in, unsigned long inlen, prng_state *prng)
 {
-   LTC_ARGCHK(in   != NULL);
-   LTC_ARGCHK(prng != NULL);
-   if (inlen != sizeof(chacha_state)) return CRYPT_INVALID_ARG;
+   int err;
 
-   LTC_MUTEX_LOCK(&prng->lock);
-   XMEMCPY(&prng->chacha.s, in, inlen);
-   prng->ready = 1;
-   LTC_MUTEX_UNLOCK(&prng->lock);
+   LTC_ARGCHK(prng != NULL);
+   LTC_ARGCHK(in   != NULL);
+   LTC_ARGCHK(inlen >= 40);
+
+   if ((err = chacha20_prng_start(prng)) != CRYPT_OK)                  return err;
+   if ((err = chacha20_prng_add_entropy(in, inlen, prng)) != CRYPT_OK) return err;
    return CRYPT_OK;
 }
 
@@ -210,8 +206,9 @@ int chacha20_prng_test(void)
    unsigned char dmp[300];
    unsigned long dmplen = sizeof(dmp);
    unsigned char out[500];
-   unsigned char t1[] = { 0x59, 0xb2, 0x26, 0x95, 0x2b, 0x01, 0x8f, 0x05, 0xbe, 0xd8 };
-   unsigned char t2[] = { 0x30, 0x34, 0x5c, 0x6e, 0x56, 0x18, 0x8c, 0x46, 0xbe, 0x8a };
+   unsigned char t1[] = { 0x59, 0xB2, 0x26, 0x95, 0x2B, 0x01, 0x8F, 0x05, 0xBE, 0xD8 };
+   unsigned char t2[] = { 0x47, 0xC9, 0x0D, 0x03, 0xE4, 0x75, 0x34, 0x27, 0xBD, 0xDE };
+   unsigned char t3[] = { 0xBC, 0xFA, 0xEF, 0x59, 0x37, 0x7F, 0x1A, 0x91, 0x1A, 0xA6 };
 
    chacha20_prng_start(&st);
    chacha20_prng_add_entropy(en, sizeof(en), &st); /* add entropy to uninitialized prng */
@@ -226,12 +223,11 @@ int chacha20_prng_test(void)
    chacha20_prng_read(out, 10, &st);  /* 10 bytes for testing */
    if (compare_testvector(out, 10, t2, sizeof(t2), "CHACHA-PRNG", 2)) return CRYPT_FAIL_TESTVECTOR;
    chacha20_prng_done(&st);
-
-   XMEMSET(&st, 0xFF, sizeof(st)); /* just to be sure */
    chacha20_prng_import(dmp, dmplen, &st);
+   chacha20_prng_ready(&st);
    chacha20_prng_read(out, 500, &st); /* skip 500 bytes */
    chacha20_prng_read(out, 10, &st);  /* 10 bytes for testing */
-   if (compare_testvector(out, 10, t2, sizeof(t2), "CHACHA-PRNG", 3)) return CRYPT_FAIL_TESTVECTOR;
+   if (compare_testvector(out, 10, t3, sizeof(t3), "CHACHA-PRNG", 3)) return CRYPT_FAIL_TESTVECTOR;
    chacha20_prng_done(&st);
 
    return CRYPT_OK;
